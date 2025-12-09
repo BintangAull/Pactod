@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <title>Pac-Man Manual (Filled)</title>
+  <style>
+    body { background:#000; display:flex; justify-content:center; align-items:center; height:100vh; margin:0; }
+    canvas { background:#111; border:4px solid #fff; }
+  </style>
+</head>
+<body>
+<canvas id="c" width="300" height="300"></canvas>
+<script>
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  function plot(x, y) {
+    ctx.fillStyle = 'yellow';
+    ctx.fillRect(x, y, 1, 1);
+  }
+
+  // Fungsi menggambar Pac-Man penuh dengan metode scanline fill 2d
+  function drawFilledPacMan(xc, yc, r) {
+    for (let y = -r; y <= r; y++) {
+      let xSpan = Math.floor(Math.sqrt(r * r - y * y)); // panjang x untuk baris ini
+      // "Mulut Pac-Man" dihapus dengan cara skip sebagian garis
+      for (let x = -xSpan; x <= xSpan; x++) {
+        // Hapus piksel di arah kanan atas (sekitar 40° sudut mulut)
+        let angle = Math.atan2(y, x);
+        if (angle > -0.6 && angle < 0.6) continue; // bikin mulut
+        plot(xc + x, yc + y);
+      }
+    }
+  }
+
+  drawFilledPacMan(150, 150, 70);
+</script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pac-Man Manual - Algoritma Bresenham</title>
+  <style>
+    html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,Segoe UI,Roboto}
+    #gameWrap{display:flex;flex-direction:column;align-items:center;}
+    canvas{background:#001a33;border:6px solid #072b45;border-radius:8px;image-rendering:pixelated}
+    code{background:#072b45;padding:4px;border-radius:4px}
+  </style>
+</head>
+<body>
+<div id="gameWrap">
+  <h2>Pac-Man (Algoritma Bresenham + Transformasi Manual)</h2>
+  <canvas id="c" width="640" height="640"></canvas>
+</div>
+
+<script>
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  // ================= Algoritma Bresenham =================
+  function drawLineBresenham(x0, y0, x1, y1, color='#fff'){
+    ctx.fillStyle = color;
+    let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+    let sx = (x0 < x1) ? 1 : -1;
+    let sy = (y0 < y1) ? 1 : -1;
+    let err = dx - dy;
+    while (true) {
+      ctx.fillRect(x0, y0, 1, 1); // plot pixel
+      if (x0 === x1 && y0 === y1) break;
+      let e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x0 += sx; }
+      if (e2 < dx) { err += dx; y0 += sy; }
+    }
+  }
+
+  // ================= Bentuk Wall (grid manual) =================
+  const TILE = 32;
+  const ROWS = Math.floor(H / TILE);
+  const COLS = Math.floor(W / TILE);
+  const maze = [];
+  for (let r = 0; r < ROWS; r++) {
+    maze[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      if (r === 0 || c === 0 || r === ROWS - 1 || c === COLS - 1) maze[r][c] = 1;
+      else if ((r % 4 === 0 && c % 3 !== 0) && r > 2 && r < ROWS - 3) maze[r][c] = 1;
+      else maze[r][c] = 0;
+    }
+  }
+
+  function drawMaze(){
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (maze[r][c] === 1) {
+          // manual: draw 4 garis pakai Bresenham membentuk kotak
+          const x = c * TILE, y = r * TILE;
+          drawLineBresenham(x, y, x + TILE, y, '#0ff');      // atas
+          drawLineBresenham(x + TILE, y, x + TILE, y + TILE, '#0ff'); // kanan
+          drawLineBresenham(x + TILE, y + TILE, x, y + TILE, '#0ff'); // bawah
+          drawLineBresenham(x, y + TILE, x, y, '#0ff');      // kiri
+        }
+      }
+    }
+  }
+
+  // ================= Bentuk Pac-Man =================
+  function drawPac(x, y, radius) {
+    // manual: gambar lingkaran dengan algoritma Midpoint Circle
+    let d = 1 - radius;
+    let xc = 0, yc = radius;
+    function plotCirclePoints(xc_, yc_) {
+      ctx.fillRect(x + xc_, y + yc_, 1, 1);
+      ctx.fillRect(x - xc_, y + yc_, 1, 1);
+      ctx.fillRect(x + xc_, y - yc_, 1, 1);
+      ctx.fillRect(x - xc_, y - yc_, 1, 1);
+      ctx.fillRect(x + yc_, y + xc_, 1, 1);
+      ctx.fillRect(x - yc_, y + xc_, 1, 1);
+      ctx.fillRect(x + yc_, y - xc_, 1, 1);
+      ctx.fillRect(x - yc_, y - xc_, 1, 1);
+    }
+    while (xc <= yc) {
+      plotCirclePoints(xc, yc);
+      if (d < 0) d += 2 * xc + 3;
+      else {
+        d += 2 * (xc - yc) + 5;
+        yc--;
+      }
+      xc++;
+    }
+  }
+
+  function render(){
+    ctx.clearRect(0, 0, W, H);
+    drawMaze();
+    drawPac(160, 160, 14);
+  }
+
+  render();
+</script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+<canvas id="canvas" width="400" height="400" style="background:#000"></canvas>
+<script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    function drawPixel(x, y, color="yellow") {
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, 1, 1);
+    }
+
+    function drawCircleMidpoint(xc, yc, r) {
+        let x = 0;
+        let y = r;
+        let p = 1 - r;
+
+        while (x <= y) {
+            // gambar 8-symmetry point
+            plotCirclePoints(xc, yc, x, y);
+            x++;
+            if (p < 0) {
+                p += 2*x + 1;
+            } else {
+                y--;
+                p += 2*(x - y) + 1;
+            }
+        }
+    }
+
+    function plotCirclePoints(xc, yc, x, y) {
+        // 8 titik simetris
+        drawPixel(xc+x, yc+y);
+        drawPixel(xc-x, yc+y);
+        drawPixel(xc+x, yc-y);
+        drawPixel(xc-x, yc-y);
+        drawPixel(xc+y, yc+x);
+        drawPixel(xc-y, yc+x);
+        drawPixel(xc+y, yc-x);
+        drawPixel(xc-y, yc-x);
+    }
+
+    // fungsi gambar pac-man (lingkaran penuh + mulut kosong)
+    function drawPacman(xc, yc, r) {
+        // gambar lingkaran penuh
+        for (let i = r; i > 0; i--) {
+            drawCircleMidpoint(xc, yc, i);
+        }
+
+        // hapus segitiga (mulut)
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.beginPath();
+        ctx.moveTo(xc, yc);
+        ctx.lineTo(xc + r, yc);
+        ctx.arc(xc, yc, r, 0, Math.PI/4, false);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalCompositeOperation = "source-over";
+    }
+
+    // gambar pacman
+    drawPacman(100, 100, 50);
+
+    function bresenhamLine(x0, y0, x1, y1, color="blue") {
+        let dx = Math.abs(x1 - x0);
+        let dy = Math.abs(y1 - y0);
+        let sx = (x0 < x1) ? 1 : -1;
+        let sy = (y0 < y1) ? 1 : -1;
+        let err = dx - dy;
+
+        while (true) {
+            drawPixel(x0, y0, color);
+            if (x0 === x1 && y0 === y1) break;
+            let e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x0 += sx; }
+            if (e2 < dx) { err += dx; y0 += sy; }
+        }
+    }
+
+    function drawWall(x, y, w, h) {
+        bresenhamLine(x, y, x+w, y);       // top
+        bresenhamLine(x, y, x, y+h);       // left
+        bresenhamLine(x+w, y, x+w, y+h);   // right
+        bresenhamLine(x, y+h, x+w, y+h);   // bottom
+    }
+
+    // contoh dinding
+    drawWall(200, 50, 80, 40);
+
+</script>

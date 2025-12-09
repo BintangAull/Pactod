@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Pac-Man 3D Manual</title>
+  <style>
+    body { margin:0; overflow:hidden; background:black; }
+  </style>
+</head>
+<body>
+<script type="module">
+  // Import THREE.js sebagai ES Module
+  import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x06121a);
+
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera.position.set(0,0,6);
+
+  const renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  // --- LIGHTS ---
+  const hemi = new THREE.HemisphereLight(0xffffee, 0x080820, 0.8);
+  scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+  dir.position.set(5,5,5);
+  scene.add(dir);
+
+  // --- PAC-MAN PARAMETERS ---
+  const radius = 1.5;
+  const widthSegments = 64;  // theta (longitude)
+  const heightSegments = 32; // phi (latitude)
+  let mouthHalf = Math.PI*0.18; // 32° mulut
+
+  // --- CREATE PAC-MAN GEOMETRY MANUALLY ---
+  function createPacGeometry(r, wSeg, hSeg, mouthHalf){
+    const positions = [];
+    const normals = [];
+    const indices = [];
+    const indexGrid = Array(hSeg+1).fill(0).map(()=>Array(wSeg+1).fill(-1));
+    let index = 0;
+
+    for(let j=0; j<=hSeg; j++){
+      const v = j/hSeg;
+      const phi = v * Math.PI; // 0=top, PI=bottom
+      for(let i=0; i<=wSeg; i++){
+        const u = i/wSeg;
+        const theta = u*2*Math.PI - Math.PI; // -PI..PI
+        const x = r * Math.sin(phi) * Math.cos(theta);
+        const y = r * Math.cos(phi);
+        const z = r * Math.sin(phi) * Math.sin(theta);
+
+        // skip vertices untuk mulut
+        if(Math.abs(theta) < mouthHalf && x>0){
+          indexGrid[j][i] = -1;
+          continue;
+        }
+
+        positions.push(x,y,z);
+        const len = Math.hypot(x,y,z)||1;
+        normals.push(x/len, y/len, z/len);
+        indexGrid[j][i] = index++;
+      }
+    }
+
+    // buat triangles
+    for(let j=0;j<hSeg;j++){
+      for(let i=0;i<wSeg;i++){
+        const a = indexGrid[j][i];
+        const b = indexGrid[j+1][i];
+        const c = indexGrid[j+1][i+1];
+        const d = indexGrid[j][i+1];
+        if(a!==-1 && b!==-1 && d!==-1) indices.push(a,b,d);
+        if(b!==-1 && c!==-1 && d!==-1) indices.push(b,c,d);
+      }
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+    geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals,3));
+    geom.setIndex(indices);
+    geom.computeBoundingSphere();
+    return geom;
+  }
+
+  // --- MESH ---
+  let pacGeom = createPacGeometry(radius, widthSegments, heightSegments, mouthHalf);
+  let pacMat = new THREE.MeshStandardMaterial({color:0xffd54f, roughness:0.6, metalness:0.1});
+  let pacMesh = new THREE.Mesh(pacGeom, pacMat);
+  scene.add(pacMesh);
+
+  // --- EYE ---
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.08,8,8), new THREE.MeshBasicMaterial({color:0x020202}));
+  eye.position.set(0.5,0.35,0.45);
+  scene.add(eye);
+
+  // --- CONTROLS (Keyboard) ---
+  window.addEventListener('keydown', e=>{
+    if(e.key==='ArrowUp'){ mouthHalf = Math.min(mouthHalf+0.02, Math.PI*0.5); rebuild(); }
+    if(e.key==='ArrowDown'){ mouthHalf = Math.max(mouthHalf-0.02,0); rebuild(); }
+    if(e.key==='ArrowLeft') pacMesh.rotation.y -= 0.1;
+    if(e.key==='ArrowRight') pacMesh.rotation.y += 0.1;
+  });
+
+  function rebuild(){
+    scene.remove(pacMesh);
+    pacGeom.dispose();
+    pacGeom = createPacGeometry(radius, widthSegments, heightSegments, mouthHalf);
+    pacMesh = new THREE.Mesh(pacGeom, pacMat);
+    scene.add(pacMesh);
+  }
+
+  // --- ANIMATE ---
+  function animate(){
+    requestAnimationFrame(animate);
+    pacMesh.rotation.y += 0.005;
+    eye.position.set(Math.cos(pacMesh.rotation.y)*0.5, 0.35, Math.sin(pacMesh.rotation.y)*0.45);
+    renderer.render(scene,camera);
+  }
+  animate();
+
+  // --- RESIZE ---
+  window.addEventListener('resize', ()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pac-Man — Implementasi Manual (Transform & Perhitungan)</title>
+  <style>
+    html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,Segoe UI,Roboto}
+    #gameWrap{display:flex;flex-direction:column;align-items:center;}
+    canvas{background:#001a33;border:6px solid #072b45;border-radius:8px;image-rendering:pixelated}
+    code{background:#072b45;padding:4px;border-radius:4px}
+  </style>
+</head>
+<body>
+<div id="gameWrap">
+  <h2>Pac-Man (Manual Transforms) — Untuk tugas grafika komputer</h2>
+  <canvas id="c" width="640" height="640"></canvas>
+
+</div>
+
+<script>
+  /* ---------------------------------------------
+     PAC-MAN manual transforms — single-file
+     - semua perhitungan transform menggunakan matriks 3x3
+     - gambar Pac-Man sebagai titik poligon (arc aprox)
+     - maze grid sederhana
+     - collision checking manual
+     ---------------------------------------------*/
+
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const TILE = 32; // ukuran kotak maze
+  const ROWS = Math.floor(H / TILE);
+  const COLS = Math.floor(W / TILE);
+
+  // ------------------ Basic linear algebra (2D homogeneous) ------------------
+  // Represent 2D points as [x,y,1]
+  function mulMatVec(mat, v){ // mat 3x3, v length 3
+    return [
+      mat[0]*v[0] + mat[1]*v[1] + mat[2]*v[2],
+      mat[3]*v[0] + mat[4]*v[1] + mat[5]*v[2],
+      mat[6]*v[0] + mat[7]*v[1] + mat[8]*v[2]
+    ];
+  }
+  function mulMatMat(a,b){ // a,b 3x3
+    const r = new Array(9).fill(0);
+    for(let i=0;i<3;i++)for(let j=0;j<3;j++)for(let k=0;k<3;k++) r[i*3+j]+=a[i*3+k]*b[k*3+j];
+    return r;
+  }
+  function T(tx,ty){ return [1,0,tx, 0,1,ty, 0,0,1]; }
+  function R(rad){ const c=Math.cos(rad), s=Math.sin(rad); return [c,-s,0, s,c,0, 0,0,1]; }
+  function S(sx,sy){ return [sx,0,0, 0,sy,0, 0,0,1]; }
+
+  // utility: transform array of 2D points
+  function transformPoints(points, mat){
+    return points.map(p=>{
+      const v = mulMatVec(mat,[p[0],p[1],1]);
+      return [v[0],v[1]];
+    });
+  }
+
+  // ------------------ Maze (grid) ------------------
+  // 0 = empty, 1 = wall
+  const maze = [];
+  for(let r=0;r<ROWS;r++){
+    maze[r]=[];
+    for(let c=0;c<COLS;c++){
+      // border walls + some internal walls pattern
+      if(r===0||c===0||r===ROWS-1||c===COLS-1) maze[r][c]=1;
+      else if((r%4===0 && c%3!==0) && r>2 && r<ROWS-3) maze[r][c]=1;
+      else maze[r][c]=0;
+    }
+  }
+  // make entrance/paths
+  maze[1][1]=0; maze[1][2]=0; maze[2][1]=0;
+
+  // ------------------ Pac-Man data (model in local coordinates) ------------------
+  const pacModel = makePacModel(16, 18); // radius approx and segments
+  function makePacModel(radius=14, segments=18){
+    // we approximate Pac-Man with a filled wedge (circle minus mouth triangle)
+    // build circle points from -pi to +pi, but leave gap for mouth
+    const pts = [];
+    const mouthAngle = Math.PI/4; // mouth opening angle (in local model)
+    const start = mouthAngle/2;
+    const end = 2*Math.PI - mouthAngle/2;
+    const steps = segments;
+    // center as first point (for triangle fan filling)
+    pts.push([0,0]);
+    for(let i=0;i<=steps;i++){
+      const t = start + (end-start)*(i/steps);
+      pts.push([Math.cos(t)*radius, Math.sin(t)*radius]);
+    }
+    return {pts, radius, mouthAngle};
+  }
+
+  // Pac state (world coordinates)
+  const pac = {
+    x: TILE*2 + TILE/2,
+    y: TILE*2 + TILE/2,
+    dir: 0, // angle in radians (0 = right)
+    speed: 80, // px / second
+    mouthOpen: true,
+    mouthPhase: 0
+  };
+
+  // ------------------ Input ------------------
+  const keys = {};
+  window.addEventListener('keydown', e=>{ keys[e.key.toLowerCase()] = true; if(e.key===' ') e.preventDefault(); });
+  window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+
+  // ------------------ Collision helpers ------------------
+  function worldToCell(x,y){ return [Math.floor(x/TILE), Math.floor(y/TILE)]; }
+  function isWallAtCell(cx,cy){ if(cx<0||cy<0||cx>=COLS||cy>=ROWS) return true; return maze[cy][cx]===1; }
+
+  // circle vs rect collision: returns true if circle at (cx,cy,r) intersects rectangle (rx,ry,w,h)
+  function circleRectColl(cx,cy,r, rx,ry,w,h){
+    // find closest point on rect to circle center
+    const closestX = Math.max(rx, Math.min(cx, rx+w));
+    const closestY = Math.max(ry, Math.min(cy, ry+h));
+    const dx = cx - closestX;
+    const dy = cy - closestY;
+    return (dx*dx + dy*dy) < r*r;
+  }
+
+  // check if pac can move to newX,newY (simple: check circle against surrounding wall tiles)
+  function canMoveTo(newX,newY){
+    const r = pacModel.radius - 1;
+    const [cx, cy] = [Math.floor(newX/TILE), Math.floor(newY/TILE)];
+    // check 3x3 neighborhood
+    for(let oy=-1; oy<=1; oy++){
+      for(let ox=-1; ox<=1; ox++){
+        const nx = cx+ox, ny = cy+oy;
+        if(isWallAtCell(nx,ny)){
+          const rx = nx*TILE, ry = ny*TILE;
+          if(circleRectColl(newX,newY,r, rx,ry,TILE,TILE)) return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  // ------------------ Drawing helpers ------------------
+  function drawMaze(){
+    for(let r=0;r<ROWS;r++){
+      for(let c=0;c<COLS;c++){
+        if(maze[r][c]===1){
+          ctx.fillStyle='#00467a';
+          ctx.fillRect(c*TILE, r*TILE, TILE, TILE);
+          // draw inner darker inset
+          ctx.fillStyle='#01334d';
+          ctx.fillRect(c*TILE+4, r*TILE+4, TILE-8, TILE-8);
+        }
+      }
+    }
+  }
+
+  function drawPac(){
+    // build transform: translate to pac.x,pac.y then rotate by pac.dir
+    const Tmat = T(pac.x, pac.y);
+    const Rmat = R(pac.dir);
+    const M = mulMatMat(Tmat, Rmat); // M = T * R (applied to model points)
+
+    // Mouth animation: modulate mouth angle
+    const mouthDelta = (Math.sin(pac.mouthPhase)+1)/2; // 0..1
+    const mouthAngle = pacModel.mouthAngle * (0.3 + 0.7*mouthDelta); // vary between small and base
+
+    // Recreate model points for the current mouthAngle (manual recompute so mouth = part removed)
+    const modelPts = [];
+    modelPts.push([0,0]);
+    const start = mouthAngle/2;
+    const end = 2*Math.PI - mouthAngle/2;
+    const steps = pacModel.pts.length-1;
+    for(let i=0;i<=steps;i++){
+      const t = start + (end-start)*(i/steps);
+      modelPts.push([Math.cos(t)*pacModel.radius, Math.sin(t)*pacModel.radius]);
+    }
+
+    const worldPts = transformPoints(modelPts, M);
+
+    // draw shape via path
+    ctx.beginPath();
+    ctx.moveTo(worldPts[0][0], worldPts[0][1]);
+    for(let i=1;i<worldPts.length;i++) ctx.lineTo(worldPts[i][0], worldPts[i][1]);
+    ctx.closePath();
+    // fill with yellow gradient (computed, but still using canvas fill)
+    const g = ctx.createLinearGradient(pac.x-pacModel.radius, pac.y-pacModel.radius, pac.x+pacModel.radius, pac.y+pacModel.radius);
+    g.addColorStop(0,'#ffd94d'); g.addColorStop(1,'#ffb300');
+    ctx.fillStyle = g;
+    ctx.fill();
+    // outline
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+
+  // draw debug: transform matrices printed
+  function drawHUD(){
+    ctx.fillStyle='white'; ctx.font='12px monospace';
+    ctx.fillText(`pos: ${pac.x.toFixed(1)}, ${pac.y.toFixed(1)}  dir: ${(pac.dir*180/Math.PI).toFixed(1)}°`, 8, 16);
+  }
+
+  // ------------------ Game loop ------------------
+  let last = performance.now();
+  function step(now){
+    const dt = (now-last)/1000; last = now;
+    update(dt);
+    render();
+    requestAnimationFrame(step);
+  }
+
+  function update(dt){
+    // input -> desired direction
+    let ax=0, ay=0;
+    if(keys['arrowleft']||keys['a']){ ax=-1; pac.dir = Math.PI; }
+    if(keys['arrowright']||keys['d']){ ax=1; pac.dir = 0; }
+    if(keys['arrowup']||keys['w']){ ay=-1; pac.dir = -Math.PI/2; }
+    if(keys['arrowdown']||keys['s']){ ay=1; pac.dir = Math.PI/2; }
+
+    const mag = Math.hypot(ax,ay);
+    if(mag>0){ ax/=mag; ay/=mag; }
+
+    const vx = ax * pac.speed;
+    const vy = ay * pac.speed;
+
+    // candidate new position (manual move with collision checking per-axis)
+    let newX = pac.x + vx*dt;
+    let newY = pac.y + vy*dt;
+
+    // check separately to allow sliding on walls
+    if(canMoveTo(newX, pac.y)) pac.x = newX; else {/*blocked*/}
+    if(canMoveTo(pac.x, newY)) pac.y = newY;
+
+    // mouth animation update
+    if(keys[' ']) pac.mouthOpen = !pac.mouthOpen; // toggle once
+    pac.mouthPhase += dt*12; // speed of mouth
+  }
+
+  function render(){
+    ctx.clearRect(0,0,W,H);
+    drawMaze();
+    drawPac();
+    drawHUD();
+  }
+
+  requestAnimationFrame(step);
+
+  /* ------------------ Notes for lecturer / student ------------------
+   1) Transform pipeline used for Pac-Man: model-space points -> apply rotation (R) -> apply translation (T)
+      - We explicitly compute 3x3 matrices (homogeneous coordinates) and multiply them.
+      - This is equivalent to ctx.translate+ctx.rotate but computations are visible here for grading.
+
+   2) Collision detection:
+      - Pac-Man represented as circle with radius = pacModel.radius
+      - Maze walls are axis-aligned rectangles (tiles). We test circle-vs-rect for cells in neighbourhood.
+
+   3) To show per-vertex math for assignment: set breakpoints or log modelPts/worldPts to examine transformed coordinates.
+
+   4) Extensions: add ghosts (moving similarly), pellets, scoring, pathfinding; all can be implemented with the same manual transform
+      and collision primitives.
+
+  Enjoy — feel free tanya kalau mau tambahan fitur yang juga harus dihitung manual (mis. matrix stack, shearing, or per-vertex lighting).
+  */
+</script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Pac-Man 3D (XYZ Manual Full Sphere)</title>
+  <style>
+    body { margin:0; overflow:hidden; background:#000; }
+  </style>
+</head>
+<body>
+<script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+<script>
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
+  camera.position.z = 5;
+
+  const renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  // Manual Sphere XYZ Full
+
+  //jadi misal dalam bola di titik vertika ya kita kasih lingkaran dan kasih lingkaran horizontal x nah
+  // kan beberapa masih ada yang kosong nah itu dihubangkan titik x sam y yang udah ketemu tadi sehingga meng elevate jadi bola
+  function createManualSphere(radius, segments) {
+    const positions = [];
+    const indices = [];
+
+    // buat vertex
+    for (let j = 0; j <= segments; j++) {
+      const y = -radius + 2 * radius * (j / segments);
+      const rCircle = Math.sqrt(radius*radius - y*y); // radius lingkaran horizontal
+      for (let i = 0; i <= segments; i++) {
+        const x = -rCircle + 2 * rCircle * (i / segments);
+        const zPos = Math.sqrt(Math.max(0, rCircle*rCircle - x*x));
+        const zNeg = -zPos;
+
+        // tambah dua vertex: depan dan belakang untuk full sphere
+        positions.push(x, y, zPos);
+        positions.push(x, y, zNeg);
+      }
+    }
+
+    // buat indeks segitiga
+    const vertsPerRow = (segments + 1) * 2;
+    for (let j = 0; j < segments; j++) {
+      for (let i = 0; i < segments; i++) {
+        const a = j * vertsPerRow + i*2;
+        const b = (j+1) * vertsPerRow + i*2;
+        const c = (j+1) * vertsPerRow + (i+1)*2;
+        const d = j * vertsPerRow + (i+1)*2;
+
+        // depan
+        indices.push(a, b, d);
+        indices.push(b, c, d);
+        // belakang (mirror)
+        indices.push(a+1, d+1, b+1);
+        indices.push(b+1, d+1, c+1);
+      }
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  }
+
+  // buat mesh
+  const sphereGeom = createManualSphere(1, 32);
+  const sphereMat = new THREE.MeshStandardMaterial({color:0xffff00, metalness:0.2, roughness:0.6});
+  const sphereMesh = new THREE.Mesh(sphereGeom, sphereMat);
+  scene.add(sphereMesh);
+
+  // lights
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+  scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.5);
+  dir.position.set(3,3,3);
+  scene.add(dir);
+
+  // animasi
+  function animate() {
+    requestAnimationFrame(animate);
+    sphereMesh.rotation.y += 0.01;
+    renderer.render(scene, camera);
+  }
+  animate();
+
+
+</script>
+</body>
+</html>
