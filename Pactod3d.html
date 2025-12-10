@@ -10,20 +10,28 @@
       position:absolute; left:12px; top:12px; z-index:5;
       background: rgba(0,0,0,0.4); padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);
     }
+    #controls-info {
+      position:absolute; left:12px; bottom:12px; z-index:5;
+      background: rgba(0,0,0,0.4); padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);
+      font-size: 12px;
+    }
   </style>
 </head>
 <body>
 <div id="canvas-wrap">
-  <div id="info">Score: <span id="score">0</span> — Use Arrow keys or WASD</div>
+  <div id="info">Score: <span id="score">0</span> — Pellets left: <span id="pellets">0</span></div>
+  <div id="controls-info">
+    🖱️ Drag to rotate camera | Scroll to zoom | ⚠️ Pac-Man shrinks as you eat!
+  </div>
 </div>
 
-<!-- Three.js from CDN -->
-<script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
   // ============== Basic scene ==============
   const wrap = document.getElementById('canvas-wrap');
   const scoreEl = document.getElementById('score');
+  const pelletsEl = document.getElementById('pellets');
   let score = 0;
 
   const scene = new THREE.Scene();
@@ -40,8 +48,7 @@
           0.1,
           1000
   );
-  // posisikan agak tinggi & sedikit mundur supaya kelihatan maze
-  camera.position.set(0, 8, 8);
+  camera.position.set(0, 12, 12);
   camera.lookAt(0, 0, 0);
 
   // Lights
@@ -60,19 +67,27 @@
   scene.add(ground);
 
   // ============== Maze (simple grid) ==============
-  // Grid layout (1 = wall, 0 = empty)
-  // small map for demo (centered)
   const map = [
-    [1,1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,0,0,0,0,1,0,1],
-    [1,0,1,0,1,0,1,0,1,0,1],
-    [1,0,1,0,0,0,1,0,1,0,1],
-    [1,0,0,0,1,0,0,0,1,0,1],
-    [1,0,1,0,1,0,1,0,1,0,1],
-    [1,0,0,0,0,0,0,0,1,0,1],
-    [1,1,1,1,1,1,1,1,1,1,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1],
+    [1,0,1,1,1,0,1,0,1,0,1,0,1,1,1,0,1],
+    [1,0,1,0,0,0,0,0,1,0,0,0,0,0,1,0,1],
+    [1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,1],
+    [1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1],
+    [1,0,1,1,1,0,1,0,1,0,1,0,1,1,1,0,1],
+    [1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1],
+    [1,1,1,0,1,1,1,0,1,0,1,1,1,0,1,1,1],
+    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+    [1,0,1,1,1,0,1,1,1,1,1,0,1,1,1,0,1],
+    [1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1],
+    [1,1,1,0,1,1,1,0,1,0,1,1,1,0,1,1,1],
+    [1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1],
+    [1,0,1,1,1,0,1,1,1,1,1,0,1,1,1,0,1],
+    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
   ];
-  const GRID_SIZE = 1.0; // distance between centers
+
+  const GRID_SIZE = 1.0;
   const rows = map.length;
   const cols = map[0].length;
 
@@ -90,9 +105,6 @@
     }
   }
 
-
-
-
   // ============== Dots (pellets) ==============
   const pellets = [];
   const pelletMat = new THREE.MeshPhongMaterial({ color: 0xffff99 });
@@ -100,7 +112,6 @@
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       if (map[r][c] === 0) {
-        // put pellet except spawn center area
         const x = (c - cols/2) * GRID_SIZE + GRID_SIZE/2;
         const z = (r - rows/2) * GRID_SIZE + GRID_SIZE/2;
         const pellet = new THREE.Mesh(pelletGeometry, pelletMat);
@@ -111,9 +122,78 @@
     }
   }
 
+  // ============== Ghosts ==============
+  const ghosts = [];
+  const ghostColors = [0xff0000, 0x00ffff]; // red and cyan
+
+  function createGhost(startR, startC, color) {
+    const ghostGroup = new THREE.Group();
+    scene.add(ghostGroup);
+
+    // Ghost body
+    const bodyMat = new THREE.MeshPhongMaterial({ color: color, shininess: 60 });
+    const bodyGeom = new THREE.SphereGeometry(0.35, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+    const body = new THREE.Mesh(bodyGeom, bodyMat);
+    body.position.set(0, 0.25, 0);
+    ghostGroup.add(body);
+
+    // Ghost skirt (bottom wavy part)
+    const skirtMat = new THREE.MeshPhongMaterial({ color: color, shininess: 60 });
+    const skirtGeom = new THREE.CylinderGeometry(0.35, 0.35, 0.3, 8);
+    const skirt = new THREE.Mesh(skirtGeom, skirtMat);
+    skirt.position.set(0, 0.1, 0);
+    ghostGroup.add(skirt);
+
+    // Eyes
+    const eyeWhiteMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
+    const eyeBlackMat = new THREE.MeshPhongMaterial({ color: 0x000000 });
+
+    const eyeGeom = new THREE.SphereGeometry(0.1, 8, 8);
+    const pupilGeom = new THREE.SphereGeometry(0.05, 8, 8);
+
+    const leftEye = new THREE.Mesh(eyeGeom, eyeWhiteMat);
+    leftEye.position.set(-0.12, 0.35, 0.25);
+    ghostGroup.add(leftEye);
+
+    const leftPupil = new THREE.Mesh(pupilGeom, eyeBlackMat);
+    leftPupil.position.set(-0.12, 0.35, 0.32);
+    ghostGroup.add(leftPupil);
+
+    const rightEye = new THREE.Mesh(eyeGeom, eyeWhiteMat);
+    rightEye.position.set(0.12, 0.35, 0.25);
+    ghostGroup.add(rightEye);
+
+    const rightPupil = new THREE.Mesh(pupilGeom, eyeBlackMat);
+    rightPupil.position.set(0.12, 0.35, 0.32);
+    ghostGroup.add(rightPupil);
+
+    const pos = gridToWorld(startR, startC);
+    ghostGroup.position.set(pos.x, 0, pos.z);
+
+    return {
+      group: ghostGroup,
+      r: startR,
+      c: startC,
+      targetR: startR,
+      targetC: startC,
+      moving: false,
+      moveStart: 0,
+      nextMoveTime: performance.now() + Math.random() * 1000
+    };
+  }
+
+  // Create 2 ghosts at different positions
+  ghosts.push(createGhost(10, 10, ghostColors[0]));
+  ghosts.push(createGhost(14, 14, ghostColors[1]));
+
   // ============== Pac-Man ==============
   const pacGroup = new THREE.Group();
   scene.add(pacGroup);
+
+  // Track total pellets and initial scale
+  const totalPellets = pellets.length;
+  let initialScale = 1.0;
+  const minScale = 0.1; // Pac-Man's minimum size before disappearing
 
   // body
   const bodyMat = new THREE.MeshPhongMaterial({ color: 0xffdd00, shininess: 80 });
@@ -122,40 +202,84 @@
   body.position.set(0, 0.25, 0);
   pacGroup.add(body);
 
-  // "mouth" fake by a black cone that intersects sphere
+  // mouth
   const mouthMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
   const mouthGeom = new THREE.ConeGeometry(0.38, 0.8, 32);
   const mouth = new THREE.Mesh(mouthGeom, mouthMat);
-  // orient cone to face +X (default cone points +Y), rotate then position slightly in front
   mouth.rotation.set(0, 0, Math.PI/2);
   mouth.position.set(0.22, 0.12, 0);
   pacGroup.add(mouth);
 
-  // starting grid position (row,col)
+  // starting position
   let pacRC = { r: Math.floor(rows/2), c: Math.floor(cols/2) };
-  // ensure starting position is empty (if blocked, put near center)
   if (map[pacRC.r][pacRC.c] === 1) {
     pacRC = { r: 1, c: 1 };
   }
 
-  // convert grid coords to world pos
   function gridToWorld(r,c) {
     return {
       x: (c - cols/2) * GRID_SIZE + GRID_SIZE/2,
       z: (r - rows/2) * GRID_SIZE + GRID_SIZE/2
     };
   }
-  // set initial pac position
+
   const p0 = gridToWorld(pacRC.r, pacRC.c);
   pacGroup.position.set(p0.x, 0, p0.z);
 
-  // movement control (grid-based target with smooth interpolation)
+  // Initialize pellets counter
+  pelletsEl.textContent = totalPellets;
+
+  // === MOUSE CONTROLS FOR CAMERA ===
+  let isDragging = false;
+  let previousMousePosition = { x: 0, y: 0 };
+  let cameraRotation = { theta: 0, phi: Math.PI / 4 }; // horizontal and vertical angles
+  let cameraDistance = 15;
+
+  renderer.domElement.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    previousMousePosition = { x: e.clientX, y: e.clientY };
+  });
+
+  renderer.domElement.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+
+    const deltaX = e.clientX - previousMousePosition.x;
+    const deltaY = e.clientY - previousMousePosition.y;
+
+    cameraRotation.theta -= deltaX * 0.005;
+    cameraRotation.phi += deltaY * 0.005;
+
+    // Limit vertical rotation
+    cameraRotation.phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, cameraRotation.phi));
+
+    previousMousePosition = { x: e.clientX, y: e.clientY };
+  });
+
+  renderer.domElement.addEventListener('mouseup', () => {
+    isDragging = false;
+  });
+
+  renderer.domElement.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    cameraDistance += e.deltaY * 0.01;
+    cameraDistance = Math.max(5, Math.min(25, cameraDistance));
+  });
+
+  function updateCameraPosition() {
+    camera.position.x = cameraDistance * Math.sin(cameraRotation.phi) * Math.cos(cameraRotation.theta);
+    camera.position.y = cameraDistance * Math.cos(cameraRotation.phi);
+    camera.position.z = cameraDistance * Math.sin(cameraRotation.phi) * Math.sin(cameraRotation.theta);
+    camera.lookAt(0, 0, 0);
+  }
+
+  updateCameraPosition();
+
+  // movement
   let targetRC = { ...pacRC };
   let moving = false;
   let moveStart = 0;
-  const MOVE_DURATION = 160; // ms to move one grid
+  const MOVE_DURATION = 160;
 
-  // direction unit vectors for mouth orientation
   const dirVectors = {
     'up': { dx:0, dz:-1, rot: 0 },
     'down': { dx:0, dz:1, rot: Math.PI },
@@ -164,7 +288,6 @@
   };
   let facing = 'right';
 
-  // input
   const keyToDir = {
     ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
     w: 'up', s: 'down', a: 'left', d: 'right',
@@ -182,17 +305,13 @@
     const v = dirVectors[dir];
     const nr = pacRC.r + v.dz;
     const nc = pacRC.c + v.dx;
-    // bounds
     if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) return;
-    // check wall
     if (map[nr][nc] === 1) return;
-    // set target and start moving
     targetRC = { r: nr, c: nc };
     moving = true;
     moveStart = performance.now();
   }
 
-  // collision with pellets
   function checkPelletCollision() {
     for (let i = pellets.length - 1; i >= 0; i--) {
       const p = pellets[i];
@@ -200,20 +319,100 @@
       const dz = p.mesh.position.z - pacGroup.position.z;
       const dist = Math.sqrt(dx*dx + dz*dz);
       if (dist < 0.4) {
-        // eat pellet
         scene.remove(p.mesh);
         pellets.splice(i,1);
         score++;
         scoreEl.textContent = score;
+        pelletsEl.textContent = pellets.length;
+
+        // Update Pac-Man scale based on remaining pellets
+        const pelletsEaten = score;
+        const progress = pelletsEaten / totalPellets;
+
+        // Scale decreases from 1.0 to minScale as pellets are eaten
+        const newScale = initialScale - (progress * (initialScale - minScale));
+        pacGroup.scale.set(newScale, newScale, newScale);
+
+        // Check if all pellets eaten (victory!)
+        if (pellets.length === 0) {
+          setTimeout(() => {
+            alert('🎉 YOU WIN! 🎉\nAll pellets collected!\nFinal Score: ' + score);
+            location.reload();
+          }, 100);
+        }
       }
     }
   }
 
-  // mouth animation params
+  function checkGhostCollision() {
+    for (let ghost of ghosts) {
+      const dx = ghost.group.position.x - pacGroup.position.x;
+      const dz = ghost.group.position.z - pacGroup.position.z;
+      const dist = Math.sqrt(dx*dx + dz*dz);
+
+      // Adjust collision distance based on Pac-Man's current scale
+      const currentScale = pacGroup.scale.x;
+      const collisionDist = 0.6 * currentScale;
+
+      if (dist < collisionDist) {
+        // Game Over!
+        setTimeout(() => {
+          alert('💀 Game Over! 💀\nCaught by ghost!\nScore: ' + score);
+          location.reload();
+        }, 100);
+      }
+    }
+  }
+
+  function moveGhost(ghost, now) {
+    if (!ghost.moving && now >= ghost.nextMoveTime) {
+      // Pick random direction
+      const directions = [
+        { dr: -1, dc: 0 },  // up
+        { dr: 1, dc: 0 },   // down
+        { dr: 0, dc: -1 },  // left
+        { dr: 0, dc: 1 }    // right
+      ];
+
+      // Shuffle and try directions
+      for (let i = 0; i < 10; i++) {
+        const dir = directions[Math.floor(Math.random() * directions.length)];
+        const newR = ghost.r + dir.dr;
+        const newC = ghost.c + dir.dc;
+
+        // Check bounds and walls
+        if (newR >= 0 && newR < rows && newC >= 0 && newC < cols && map[newR][newC] === 0) {
+          ghost.targetR = newR;
+          ghost.targetC = newC;
+          ghost.moving = true;
+          ghost.moveStart = now;
+          break;
+        }
+      }
+
+      ghost.nextMoveTime = now + 300 + Math.random() * 400;
+    }
+
+    if (ghost.moving) {
+      const t = (now - ghost.moveStart) / MOVE_DURATION;
+      if (t >= 1) {
+        ghost.r = ghost.targetR;
+        ghost.c = ghost.targetC;
+        const pos = gridToWorld(ghost.r, ghost.c);
+        ghost.group.position.set(pos.x, 0, pos.z);
+        ghost.moving = false;
+      } else {
+        const start = gridToWorld(ghost.r, ghost.c);
+        const end = gridToWorld(ghost.targetR, ghost.targetC);
+        ghost.group.position.x = start.x + (end.x - start.x) * easeInOut(t);
+        ghost.group.position.z = start.z + (end.z - start.z) * easeInOut(t);
+      }
+    }
+  }
+
   let mouthOpen = 0;
   let mouthDir = 1;
 
-  // resize handling
   window.addEventListener('resize', onWindowResize);
   function onWindowResize() {
     const w = wrap.clientWidth;
@@ -224,25 +423,28 @@
   }
   onWindowResize();
 
-  // main loop
   let last = performance.now();
   function animate(now) {
     const dt = now - last;
     last = now;
 
-    // movement interpolation
+    // Move ghosts
+    for (let ghost of ghosts) {
+      moveGhost(ghost, now);
+    }
+
+    // Check ghost collision
+    checkGhostCollision();
+
     if (moving) {
       const t = (now - moveStart) / MOVE_DURATION;
       if (t >= 1) {
-        // finalize move
         pacRC = { ...targetRC };
         const p = gridToWorld(pacRC.r, pacRC.c);
         pacGroup.position.set(p.x, 0, p.z);
         moving = false;
-        // after reaching, check pellet
         checkPelletCollision();
       } else {
-        // lerp between current and target
         const start = gridToWorld(pacRC.r, pacRC.c);
         const end = gridToWorld(targetRC.r, targetRC.c);
         pacGroup.position.x = start.x + (end.x - start.x) * easeInOut(t);
@@ -250,68 +452,39 @@
       }
     }
 
-    // mouth open/close animation (speed up while moving)
     const mouthSpeed = moving ? 0.03 : 0.015;
     mouthOpen += mouthDir * mouthSpeed * (dt / 16);
     if (mouthOpen > 1.0) { mouthOpen = 1.0; mouthDir = -1; }
     if (mouthOpen < 0.0) { mouthOpen = 0.0; mouthDir = 1; }
-    // map mouthOpen [0..1] to cone rotation and position for visual
-    const face = dirVectors[facing];
-    // rotate mouth to face direction
-    // reset rotation
+
     mouth.rotation.set(0,0,0);
     if (facing === 'right') mouth.rotation.set(0, 0, Math.PI/2);
     if (facing === 'left')  mouth.rotation.set(0, 0, -Math.PI/2);
     if (facing === 'up')    mouth.rotation.set(Math.PI/2, 0, 0);
     if (facing === 'down')  mouth.rotation.set(-Math.PI/2, 0, 0);
-    // move cone in/out a bit to simulate open/close
+
     const mouthOffset = 0.22 + mouthOpen * 0.08;
     if (facing === 'right') mouth.position.set(mouthOffset, 0.12, 0);
     if (facing === 'left')  mouth.position.set(-mouthOffset, 0.12, 0);
     if (facing === 'up')    mouth.position.set(0, 0.12, -mouthOffset);
     if (facing === 'down')  mouth.position.set(0, 0.12, mouthOffset);
 
-    // camera follow (lebih cinematic: agak tinggi & miring)
-    const desiredPos = new THREE.Vector3(
-            pacGroup.position.x,
-            pacGroup.position.y + 5,  // ketinggian kamera
-            pacGroup.position.z + 6   // jarak ke belakang
-    );
-// LERP untuk smooth follow
-    camera.position.lerp(desiredPos, 0.05);
-// arahkan kamera sedikit ke bawah
-    camera.lookAt(
-            pacGroup.position.x,
-            pacGroup.position.y + 0.5,
-            pacGroup.position.z
-    );
-
+    updateCameraPosition();
 
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
   }
   requestAnimationFrame(animate);
 
-  // small easing
   function easeInOut(t) {
     return t<0.5 ? 2*t*t : -1 + (4-2*t)*t;
   }
 
-  // initial pellet check (maybe starting spot had pellet)
   checkPelletCollision();
 
-  // Optional: simple click to restart / center
   window.addEventListener('dblclick', () => {
-    // reset pac to center-ish
-    pacRC = { r: 1, c: 1 };
-    targetRC = { ...pacRC };
-    const p = gridToWorld(pacRC.r, pacRC.c);
-    pacGroup.position.set(p.x, 0, p.z);
-    // restore pellets (naive: reload page for simplicity)
     location.reload();
   });
-
-  // end of script
 </script>
 </body>
 </html>
